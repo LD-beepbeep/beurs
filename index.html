@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aandeel Tracker met LocalStorage</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 2em; }
+  input, button, select { margin: 0.3em 0; padding: 0.3em; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1em; }
+  th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
+  td input { width: 80px; }
+  button.deleteBtn { background: #e74c3c; color: white; border: none; padding: 0.3em 0.6em; cursor: pointer; }
+  button.deleteBtn:hover { background: #c0392b; }
+  button.editBtn { background: #3498db; color: white; border: none; padding: 0.3em 0.6em; cursor: pointer; }
+  button.editBtn:hover { background: #2980b9; }
+</style>
+</head>
+<body>
+
+<h1>Aandeel Tracker</h1>
+
+<div>
+  <label>
+    Ticker symbool (bv AAPL):<br/>
+    <input type="text" id="ticker" />
+  </label><br/>
+  <label>
+    Aantal aandelen:<br/>
+    <input type="number" id="aantal" min="0" />
+  </label><br/>
+  <label>
+    Aankoopprijs per aandeel:<br/>
+    <input type="number" id="aankoopPrijs" min="0" step="0.01" />
+  </label><br/>
+  <label>
+    Valuta aankoop (bv USD):<br/>
+    <input type="text" id="valutaAankoop" maxlength="3" value="USD" />
+  </label><br/>
+  <label>
+    Valuta weergave (bv EUR):<br/>
+    <input type="text" id="valutaWeergave" maxlength="3" value="EUR" />
+  </label><br/>
+  <button id="voegToe">Voeg toe / Update</button>
+  <button id="resetForm" style="margin-left:1em;">Formulier leegmaken</button>
+</div>
+
+<table id="resultaten">
+  <thead>
+    <tr>
+      <th>Ticker</th>
+      <th>Aantal</th>
+      <th>Aankoopprijs per aandeel</th>
+      <th>Totaal aankoop</th>
+      <th>Huidige koers</th>
+      <th>Huidige waarde</th>
+      <th>Verschil (abs)</th>
+      <th>Verschil (%)</th>
+      <th>Acties</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<button id="exportExcel">Exporteer naar Excel</button>
+
+<script>
+  // Jouw API keys:
+  const FINNHUB_API_KEY = 'd1du50hr01qpp0b44cd0d1du50hr01qpp0b44cdg';
+  const CURRENCY_API_KEY = 'cur_live_NI5ABtNIkG6zFqy0fc8cobB6mo9P3sGwHOttceTs';
+
+  const tabelBody = document.querySelector('#resultaten tbody');
+  const formFields = {
+    ticker: document.getElementById('ticker'),
+    aantal: document.getElementById('aantal'),
+    aankoopPrijs: document.getElementById('aankoopPrijs'),
+    valutaAankoop: document.getElementById('valutaAankoop'),
+    valutaWeergave: document.getElementById('valutaWeergave'),
+  };
+
+  let aandelenLijst = []; // array van objecten met aandelen info
+  let bewerkIndex = -1; // -1 betekent nieuw toevoegen, anders index van te bewerken aandeel
+
+  // Helper: haal koers op van Finnhub
+  async function haalKoersOp(ticker) {
+    const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${FINNHUB_API_KEY}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Fout bij koers ophalen voor ' + ticker);
+    const data = await resp.json();
+    if (!data.c || data.c === 0) throw new Error('Geen koers gevonden voor ' + ticker);
+    return data.c;
+  }
+
+  // Helper: haal valutakoers op
+  async function haalValutaRate(van, naar) {
+    if (van === naar) return 1;
+    const url = `https://api.currencyapi.com/v3/latest?apikey=${CURRENCY_API_KEY}&base_currency=${van}&currencies=${naar}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Fout bij valutakoers ophalen');
+    const data = await resp.json();
+    if (!data.data || !data.data[naar]) throw new Error('Valutadata niet gevonden voor ' + naar);
+    return data.data[naar].value;
+  }
+
+  // Render tabel vanuit aandelenLijst
+  async function renderTabel() {
+    tabelBody.innerHTML = '';
+    for (let i = 0; i < aandelenLijst.length; i++) {
+      const a = aandelenLijst[i];
+      try {
+        const koersOrigineel = await haalKoersOp(a.ticker);
+        const valutaKoers = await haalValutaRate('USD', a.valutaWeergave);
+        const koers = koersOrigineel * valutaKoers;
+
+        const totaalAankoop = a.aantal * a.aankoopPrijs;
+        const huidigeWaarde = koers * a.aantal;
+        const verschilAbs = huidigeWaarde - totaalAankoop;
+        const verschilPct = (verschilAbs / totaalAankoop) * 100;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${a.ticker}</td>
+          <td>${a.aantal}</td>
+          <td>${a.aankoopPrijs.toFixed(2)} ${a.valutaAankoop}</td>
+          <td>${totaalAankoop.toFixed(2)} ${a.valutaAankoop}</td>
+          <td>${koers.toFixed(2)} ${a.valutaWeergave}</td>
+          <td>${huidigeWaarde.toFixed(2)} ${a.valutaWeergave}</td>
+          <td style="color:${verschilAbs >= 0 ? 'green' : 'red'}">${verschilAbs.toFixed(2)}</td>
+          <td style="color:${verschilPct >= 0 ? 'green' : 'red'}">${verschilPct.toFixed(2)}%</td>
+          <td>
+            <button class="editBtn" data-index="${i}">✏️</button>
+            <button class="deleteBtn" data-index="${i}">🗑️</button>
+          </td>
+        `;
+        tabelBody.appendChild(tr);
+      } catch (err) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td colspan="9" style="color:red">Fout bij ophalen data voor ${a.ticker}: ${err.message}</td>`;
+        tabelBody.appendChild(tr);
+      }
+    }
+  }
+
+  // Save naar localStorage
+  function slaOp() {
+    localStorage.setItem('aandelenLijst', JSON.stringify(aandelenLijst));
+  }
+
+  // Laad uit localStorage
+  function laadOp() {
+    const data = localStorage.getItem('aandelenLijst');
+    if (data) {
+      aandelenLijst = JSON.parse(data);
+    }
+  }
+
+  // Formulier reset
+  function resetForm() {
+    bewerkIndex = -1;
+    formFields.ticker.value = '';
+    formFields.aantal.value = '';
+    formFields.aankoopPrijs.value = '';
+    formFields.valutaAankoop.value = 'USD';
+    formFields.valutaWeergave.value = 'EUR';
+    document.getElementById('voegToe').textContent = 'Voeg toe';
+  }
+
+  // Voeg toe of update
+  document.getElementById('voegToe').addEventListener('click', async () => {
+    const ticker = formFields.ticker.value.trim().toUpperCase();
+    const aantal = parseFloat(formFields.aantal.value);
+    const aankoopPrijs = parseFloat(formFields.aankoopPrijs.value);
+    const valutaAankoop = formFields.valutaAankoop.value.trim().toUpperCase();
+    const valutaWeergave = formFields.valutaWeergave.value.trim().toUpperCase();
+
+    if (!ticker || isNaN(aantal) || aantal <= 0 || isNaN(aankoopPrijs) || aankoopPrijs <= 0 ||
+        !valutaAankoop || !valutaWeergave) {
+      alert('Vul alle velden correct in.');
+      return;
+    }
+
+    // Check als ticker al bestaat (voor toevoegen nieuwe niet toegestaan dubbel)
+    if (bewerkIndex === -1 && aandelenLijst.some(a => a.ticker === ticker)) {
+      alert('Dit aandeel staat al in de lijst. Gebruik bewerken.');
+      return;
+    }
+
+    if (bewerkIndex === -1) {
+      // Nieuw toevoegen
+      aandelenLijst.push({
+        ticker, aantal, aankoopPrijs, valutaAankoop, valutaWeergave
+      });
+    } else {
+      // Update bestaand
+      aandelenLijst[bewerkIndex] = { ticker, aantal, aankoopPrijs, valutaAankoop, valutaWeergave };
+    }
+
+    slaOp();
+    resetForm();
+    await renderTabel();
+  });
+
+  // Reset formulier knop
+  document.getElementById('resetForm').addEventListener('click', () => {
+    resetForm();
+  });
+
+  // Tabel acties (edit/delete)
+  tabelBody.addEventListener('click', (e) => {
+    if (e.target.classList.contains('deleteBtn')) {
+      const idx = parseInt(e.target.dataset.index);
+      if (confirm(`Weet je zeker dat je ${aandelenLijst[idx].ticker} wilt verwijderen?`)) {
+        aandelenLijst.splice(idx, 1);
+        slaOp();
+        renderTabel();
+        resetForm();
+      }
+    } else if (e.target.classList.contains('editBtn')) {
+      const idx = parseInt(e.target.dataset.index);
+      const a = aandelenLijst[idx];
+      formFields.ticker.value = a.ticker;
+      formFields.aantal.value = a.aantal;
+      formFields.aankoopPrijs.value = a.aankoopPrijs;
+      formFields.valutaAankoop.value = a.valutaAankoop;
+      formFields.valutaWeergave.value = a.valutaWeergave;
+      bewerkIndex = idx;
+      document.getElementById('voegToe').textContent = 'Update';
+    }
+  });
+
+  // Exporteren naar Excel
+  document.getElementById('exportExcel').addEventListener('click', () => {
+    const wb = XLSX.utils.table_to_book(document.getElementById('resultaten'), { sheet: 'Aandelen' });
+    XLSX.writeFile(wb, 'aandelen_overzicht.xlsx');
+  });
+
+  // Init
+  (async () => {
+    laadOp();
+    await renderTabel();
+  })();
+</script>
+
+</body>
+</html>
