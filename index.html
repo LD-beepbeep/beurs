@@ -1,246 +1,366 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Aandeel Tracker met LocalStorage</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<style>
-  body { font-family: Arial, sans-serif; margin: 2em; }
-  input, button, select { margin: 0.3em 0; padding: 0.3em; }
-  table { border-collapse: collapse; width: 100%; margin-top: 1em; }
-  th, td { border: 1px solid #ccc; padding: 0.5em; text-align: center; }
-  td input { width: 80px; }
-  button.deleteBtn { background: #e74c3c; color: white; border: none; padding: 0.3em 0.6em; cursor: pointer; }
-  button.deleteBtn:hover { background: #c0392b; }
-  button.editBtn { background: #3498db; color: white; border: none; padding: 0.3em 0.6em; cursor: pointer; }
-  button.editBtn:hover { background: #2980b9; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockSync: Real-Time Portfolio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Enhanced glassmorphism and animations */
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        }
+        .neon-glow {
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.6), 0 0 24px rgba(147, 51, 234, 0.4);
+            transition: all 0.3s ease;
+        }
+        .neon-glow:hover {
+            box-shadow: 0 0 20px rgba(34, 211, 238, 0.9), 0 0 30px rgba(147, 51, 234, 0.7);
+        }
+        .modal-enter {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .stock-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .stock-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        }
+        .price-update {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        .bg-tech-grid {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+    </style>
 </head>
-<body>
+<body class="bg-gray-950 text-white font-sans min-h-screen bg-tech-grid">
+    <div class="container mx-auto p-6">
+        <!-- Header -->
+        <header class="mb-8 text-center">
+            <h1 class="text-5xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500">
+                StockSync: Real-Time Portfolio
+            </h1>
+            <p class="text-gray-300 mt-2 text-lg">Track your investments with cutting-edge real-time data.</p>
+        </header>
 
-<h1>Aandeel Tracker</h1>
+        <!-- Buttons -->
+        <div class="mb-8 flex justify-center gap-4">
+            <button id="add-stock-btn" class="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-8 py-3 rounded-full neon-glow font-semibold text-lg">
+                Add New Stock
+            </button>
+            <button id="export-btn" class="bg-gradient-to-r from-green-500 to-teal-600 text-white px-8 py-3 rounded-full neon-glow font-semibold text-lg">
+                Export to CSV
+            </button>
+        </div>
 
-<div>
-  <label>
-    Ticker symbool (bv AAPL):<br/>
-    <input type="text" id="ticker" />
-  </label><br/>
-  <label>
-    Aantal aandelen:<br/>
-    <input type="number" id="aantal" min="0" />
-  </label><br/>
-  <label>
-    Aankoopprijs per aandeel:<br/>
-    <input type="number" id="aankoopPrijs" min="0" step="0.01" />
-  </label><br/>
-  <label>
-    Valuta aankoop (bv USD):<br/>
-    <input type="text" id="valutaAankoop" maxlength="3" value="USD" />
-  </label><br/>
-  <label>
-    Valuta weergave (bv EUR):<br/>
-    <input type="text" id="valutaWeergave" maxlength="3" value="EUR" />
-  </label><br/>
-  <button id="voegToe">Voeg toe / Update</button>
-  <button id="resetForm" style="margin-left:1em;">Formulier leegmaken</button>
-</div>
+        <!-- Stock Cards Container -->
+        <div id="stock-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
 
-<table id="resultaten">
-  <thead>
-    <tr>
-      <th>Ticker</th>
-      <th>Aantal</th>
-      <th>Aankoopprijs per aandeel</th>
-      <th>Totaal aankoop</th>
-      <th>Huidige koers</th>
-      <th>Huidige waarde</th>
-      <th>Verschil (abs)</th>
-      <th>Verschil (%)</th>
-      <th>Acties</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+        <!-- Modal for Adding/Editing Stocks -->
+        <div id="stock-modal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
+            <div class="bg-gray-900 glass-effect p-8 rounded-xl w-full max-w-lg modal-enter">
+                <h2 id="modal-title" class="text-2xl font-bold text-cyan-400 mb-6">Add Stock</h2>
+                <form id="stock-form" class="space-y-5">
+                    <input type="hidden" id="edit-index">
+                    <div>
+                        <label for="symbol" class="block text-sm font-medium text-gray-300">Stock Symbol (e.g., AAPL)</label>
+                        <input type="text" id="symbol" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" required>
+                    </div>
+                    <div>
+                        <label for="shares" class="block text-sm font-medium text-gray-300">Number of Shares</label>
+                        <input type="number" id="shares" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" min="1" required>
+                    </div>
+                    <div>
+                        <label for="purchase-price" class="block text-sm font-medium text-gray-300">Purchase Price per Share (USD)</label>
+                        <input type="number" id="purchase-price" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500" min="0" step="0.01" required>
+                    </div>
+                    <div id="error-message" class="text-red-400 text-sm hidden"></div>
+                    <div id="loading-message" class="text-cyan-400 text-sm hidden">Fetching stock data...</div>
+                    <div class="flex justify-end gap-3">
+                        <button type="button" id="cancel-btn" class="bg-gray-700 text-white px-5 py-2 rounded-lg hover:bg-gray-600 transition">Cancel</button>
+                        <button type="submit" id="submit-btn" class="bg-gradient-to-r from-cyan-500 to-purple-600 text-white px-5 py-2 rounded-lg neon-glow">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-<button id="exportExcel">Exporteer naar Excel</button>
+    <script>
+        // API keys
+        const FINNHUB_API_KEY = 'd1fbbkhr01qpc737qcsgd1fbbkhr01qpc737qct0';
+        const CURRENCY_API_KEY = 'cur_live_NI5ABtNIkG6zFqy0fc8cobB6mo9P3sGwHOttceTs';
 
-<script>
-  // Jouw API keys:
-  const FINNHUB_API_KEY = 'd1du50hr01qpp0b44cd0d1du50hr01qpp0b44cdg';
-  const CURRENCY_API_KEY = 'cur_live_NI5ABtNIkG6zFqy0fc8cobB6mo9P3sGwHOttceTs';
+        // Initialize stocks and WebSocket
+        let stocks = JSON.parse(localStorage.getItem('stocks')) || [];
+        let socket = null;
+        let priceData = {}; // Store real-time prices
+        let exchangeRate = 1; // Default exchange rate
 
-  const tabelBody = document.querySelector('#resultaten tbody');
-  const formFields = {
-    ticker: document.getElementById('ticker'),
-    aantal: document.getElementById('aantal'),
-    aankoopPrijs: document.getElementById('aankoopPrijs'),
-    valutaAankoop: document.getElementById('valutaAankoop'),
-    valutaWeergave: document.getElementById('valutaWeergave'),
-  };
+        // DOM elements
+        const stockContainer = document.getElementById('stock-container');
+        const stockModal = document.getElementById('stock-modal');
+        const stockForm = document.getElementById('stock-form');
+        const addStockBtn = document.getElementById('add-stock-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const modalTitle = document.getElementById('modal-title');
+        const submitBtn = document.getElementById('submit-btn');
+        const editIndexInput = document.getElementById('edit-index');
+        const symbolInput = document.getElementById('symbol');
+        const sharesInput = document.getElementById('shares');
+        const purchasePriceInput = document.getElementById('purchase-price');
+        const errorMessage = document.getElementById('error-message');
+        const loadingMessage = document.getElementById('loading-message');
+        const exportBtn = document.getElementById('export-btn');
 
-  let aandelenLijst = []; // array van objecten met aandelen info
-  let bewerkIndex = -1; // -1 betekent nieuw toevoegen, anders index van te bewerken aandeel
+        // Initialize WebSocket
+        function initWebSocket() {
+            socket = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_API_KEY}`);
 
-  // Helper: haal koers op van Finnhub
-  async function haalKoersOp(ticker) {
-    const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${FINNHUB_API_KEY}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Fout bij koers ophalen voor ' + ticker);
-    const data = await resp.json();
-    if (!data.c || data.c === 0) throw new Error('Geen koers gevonden voor ' + ticker);
-    return data.c;
-  }
+            socket.addEventListener('open', () => {
+                console.log('WebSocket connected');
+                // Subscribe to existing stocks
+                stocks.forEach(stock => {
+                    socket.send(JSON.stringify({ type: 'subscribe', symbol: stock.symbol }));
+                });
+            });
 
-  // Helper: haal valutakoers op
-  async function haalValutaRate(van, naar) {
-    if (van === naar) return 1;
-    const url = `https://api.currencyapi.com/v3/latest?apikey=${CURRENCY_API_KEY}&base_currency=${van}&currencies=${naar}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Fout bij valutakoers ophalen');
-    const data = await resp.json();
-    if (!data.data || !data.data[naar]) throw new Error('Valutadata niet gevonden voor ' + naar);
-    return data.data[naar].value;
-  }
+            socket.addEventListener('message', (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'trade' && data.data) {
+                    data.data.forEach(trade => {
+                        priceData[trade.s] = trade.p; // Update price for symbol
+                    });
+                    renderStocks(); // Re-render with updated prices
+                }
+            });
 
-  // Render tabel vanuit aandelenLijst
-  async function renderTabel() {
-    tabelBody.innerHTML = '';
-    for (let i = 0; i < aandelenLijst.length; i++) {
-      const a = aandelenLijst[i];
-      try {
-        const koersOrigineel = await haalKoersOp(a.ticker);
-        const valutaKoers = await haalValutaRate('USD', a.valutaWeergave);
-        const koers = koersOrigineel * valutaKoers;
+            socket.addEventListener('error', (error) => {
+                console.error('WebSocket error:', error);
+            });
 
-        const totaalAankoop = a.aantal * a.aankoopPrijs;
-        const huidigeWaarde = koers * a.aantal;
-        const verschilAbs = huidigeWaarde - totaalAankoop;
-        const verschilPct = (verschilAbs / totaalAankoop) * 100;
+            socket.addEventListener('close', () => {
+                console.log('WebSocket closed, reconnecting...');
+                setTimeout(initWebSocket, 5000); // Reconnect after 5 seconds
+            });
+        }
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${a.ticker}</td>
-          <td>${a.aantal}</td>
-          <td>${a.aankoopPrijs.toFixed(2)} ${a.valutaAankoop}</td>
-          <td>${totaalAankoop.toFixed(2)} ${a.valutaAankoop}</td>
-          <td>${koers.toFixed(2)} ${a.valutaWeergave}</td>
-          <td>${huidigeWaarde.toFixed(2)} ${a.valutaWeergave}</td>
-          <td style="color:${verschilAbs >= 0 ? 'green' : 'red'}">${verschilAbs.toFixed(2)}</td>
-          <td style="color:${verschilPct >= 0 ? 'green' : 'red'}">${verschilPct.toFixed(2)}%</td>
-          <td>
-            <button class="editBtn" data-index="${i}">✏️</button>
-            <button class="deleteBtn" data-index="${i}">🗑️</button>
-          </td>
-        `;
-        tabelBody.appendChild(tr);
-      } catch (err) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="9" style="color:red">Fout bij ophalen data voor ${a.ticker}: ${err.message}</td>`;
-        tabelBody.appendChild(tr);
-      }
-    }
-  }
+        // Fetch USD to EUR exchange rate
+        async function fetchExchangeRate() {
+            try {
+                const response = await fetch(`https://api.currencyapi.com/v3/latest?apikey=${CURRENCY_API_KEY}&base_currency=USD&currencies=EUR`);
+                const data = await response.json();
+                if (data.data && data.data.EUR) {
+                    exchangeRate = data.data.EUR.value;
+                }
+                return exchangeRate;
+            } catch (error) {
+                console.error('Error fetching exchange rate:', error);
+                return 1;
+            }
+        }
 
-  // Save naar localStorage
-  function slaOp() {
-    localStorage.setItem('aandelenLijst', JSON.stringify(aandelenLijst));
-  }
+        // Render stock cards
+        async function renderStocks() {
+            stockContainer.innerHTML = '';
+            await fetchExchangeRate(); // Update exchange rate
 
-  // Laad uit localStorage
-  function laadOp() {
-    const data = localStorage.getItem('aandelenLijst');
-    if (data) {
-      aandelenLijst = JSON.parse(data);
-    }
-  }
+            for (let i = 0; i < stocks.length; i++) {
+                const stock = stocks[i];
+                const currentPrice = priceData[stock.symbol] || null;
+                const card = document.createElement('div');
+                card.className = 'stock-card bg-gray-900 glass-effect p-6 rounded-xl';
 
-  // Formulier reset
-  function resetForm() {
-    bewerkIndex = -1;
-    formFields.ticker.value = '';
-    formFields.aantal.value = '';
-    formFields.aankoopPrijs.value = '';
-    formFields.valutaAankoop.value = 'USD';
-    formFields.valutaWeergave.value = 'EUR';
-    document.getElementById('voegToe').textContent = 'Voeg toe';
-  }
+                if (currentPrice === null) {
+                    card.innerHTML = `
+                        <h3 class="text-xl font-bold text-cyan-400 mb-3">${stock.symbol}</h3>
+                        <p class="text-gray-400">Shares: ${stock.shares}</p>
+                        <p class="text-gray-400">Purchase Price: $${stock.purchasePrice.toFixed(2)}</p>
+                        <p class="text-gray-400">Total Purchase: $${(stock.shares * stock.purchasePrice).toFixed(2)}</p>
+                        <p class="text-red-400 price-update">Waiting for price data...</p>
+                        <div class="mt-4 flex gap-3">
+                            <button onclick="editStock(${i})" class="bg-yellow-500 text-white px-4 py-2 rounded-lg neon-glow">Edit</button>
+                            <button onclick="deleteStock(${i})" class="bg-red-500 text-white px-4 py-2 rounded-lg neon-glow">Delete</button>
+                        </div>
+                    `;
+                } else {
+                    const totalPurchase = stock.shares * stock.purchasePrice;
+                    const totalValue = stock.shares * currentPrice;
+                    const gainLoss = totalValue - totalPurchase;
+                    const gainLossPercent = ((currentPrice - stock.purchasePrice) / stock.purchasePrice * 100).toFixed(2);
+                    const currentPriceEUR = (currentPrice * exchangeRate).toFixed(2);
+                    const totalValueEUR = (totalValue * exchangeRate).toFixed(2);
 
-  // Voeg toe of update
-  document.getElementById('voegToe').addEventListener('click', async () => {
-    const ticker = formFields.ticker.value.trim().toUpperCase();
-    const aantal = parseFloat(formFields.aantal.value);
-    const aankoopPrijs = parseFloat(formFields.aankoopPrijs.value);
-    const valutaAankoop = formFields.valutaAankoop.value.trim().toUpperCase();
-    const valutaWeergave = formFields.valutaWeergave.value.trim().toUpperCase();
+                    card.innerHTML = `
+                        <h3 class="text-xl font-bold text-cyan-400 mb-3">${stock.symbol}</h3>
+                        <p class="text-gray-400">Shares: ${stock.shares}</p>
+                        <p class="text-gray-400">Purchase Price: $${stock.purchasePrice.toFixed(2)}</p>
+                        <p class="text-gray-400">Total Purchase: $${totalPurchase.toFixed(2)}</p>
+                        <p class="text-gray-200 price-update">Current Price: $${currentPrice.toFixed(2)} (€${currentPriceEUR})</p>
+                        <p class="text-gray-200">Total Value: $${totalValue.toFixed(2)} (€${totalValueEUR})</p>
+                        <p class="text-${gainLoss >= 0 ? 'green' : 'red'}-400">Gain/Loss: ${gainLossPercent}% ($${gainLoss.toFixed(2)})</p>
+                        <div class="mt-4 flex gap-3">
+                            <button onclick="editStock(${i})" class="bg-yellow-500 text-white px-4 py-2 rounded-lg neon-glow">Edit</button>
+                            <button onclick="deleteStock(${i})" class="bg-red-500 text-white px-4 py-2 rounded-lg neon-glow">Delete</button>
+                        </div>
+                    `;
+                }
+                stockContainer.appendChild(card);
+            }
+        }
 
-    if (!ticker || isNaN(aantal) || aantal <= 0 || isNaN(aankoopPrijs) || aankoopPrijs <= 0 ||
-        !valutaAankoop || !valutaWeergave) {
-      alert('Vul alle velden correct in.');
-      return;
-    }
+        // Show modal
+        function showModal(isEdit = false, index = null) {
+            stockModal.classList.remove('hidden');
+            modalTitle.textContent = isEdit ? 'Edit Stock' : 'Add Stock';
+            submitBtn.textContent = isEdit ? 'Update' : 'Save';
+            errorMessage.classList.add('hidden');
+            loadingMessage.classList.add('hidden');
 
-    // Check als ticker al bestaat (voor toevoegen nieuwe niet toegestaan dubbel)
-    if (bewerkIndex === -1 && aandelenLijst.some(a => a.ticker === ticker)) {
-      alert('Dit aandeel staat al in de lijst. Gebruik bewerken.');
-      return;
-    }
+            if (isEdit) {
+                const stock = stocks[index];
+                editIndexInput.value = index;
+                symbolInput.value = stock.symbol;
+                sharesInput.value = stock.shares;
+                purchasePriceInput.value = stock.purchasePrice;
+            } else {
+                stockForm.reset();
+                editIndexInput.value = '';
+            }
+        }
 
-    if (bewerkIndex === -1) {
-      // Nieuw toevoegen
-      aandelenLijst.push({
-        ticker, aantal, aankoopPrijs, valutaAankoop, valutaWeergave
-      });
-    } else {
-      // Update bestaand
-      aandelenLijst[bewerkIndex] = { ticker, aantal, aankoopPrijs, valutaAankoop, valutaWeergave };
-    }
+        // Hide modal
+        function hideModal() {
+            stockModal.classList.add('hidden');
+            stockForm.reset();
+            errorMessage.classList.add('hidden');
+            loadingMessage.classList.add('hidden');
+        }
 
-    slaOp();
-    resetForm();
-    await renderTabel();
-  });
+        // Validate stock symbol with REST API fallback
+        async function validateStockSymbol(symbol) {
+            try {
+                const response = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`);
+                const data = await response.json();
+                if (data.c === 0) throw new Error('Invalid symbol');
+                return true;
+            } catch (error) {
+                console.error('Error validating symbol:', error);
+                return false;
+            }
+        }
 
-  // Reset formulier knop
-  document.getElementById('resetForm').addEventListener('click', () => {
-    resetForm();
-  });
+        // Add or update stock
+        stockForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            submitBtn.disabled = true;
+            loadingMessage.classList.remove('hidden');
+            errorMessage.classList.add('hidden');
 
-  // Tabel acties (edit/delete)
-  tabelBody.addEventListener('click', (e) => {
-    if (e.target.classList.contains('deleteBtn')) {
-      const idx = parseInt(e.target.dataset.index);
-      if (confirm(`Weet je zeker dat je ${aandelenLijst[idx].ticker} wilt verwijderen?`)) {
-        aandelenLijst.splice(idx, 1);
-        slaOp();
-        renderTabel();
-        resetForm();
-      }
-    } else if (e.target.classList.contains('editBtn')) {
-      const idx = parseInt(e.target.dataset.index);
-      const a = aandelenLijst[idx];
-      formFields.ticker.value = a.ticker;
-      formFields.aantal.value = a.aantal;
-      formFields.aankoopPrijs.value = a.aankoopPrijs;
-      formFields.valutaAankoop.value = a.valutaAankoop;
-      formFields.valutaWeergave.value = a.valutaWeergave;
-      bewerkIndex = idx;
-      document.getElementById('voegToe').textContent = 'Update';
-    }
-  });
+            const symbol = symbolInput.value.trim().toUpperCase();
+            const shares = parseInt(sharesInput.value);
+            const purchasePrice = parseFloat(purchasePriceInput.value);
 
-  // Exporteren naar Excel
-  document.getElementById('exportExcel').addEventListener('click', () => {
-    const wb = XLSX.utils.table_to_book(document.getElementById('resultaten'), { sheet: 'Aandelen' });
-    XLSX.writeFile(wb, 'aandelen_overzicht.xlsx');
-  });
+            // Validate symbol
+            const isValid = await validateStockSymbol(symbol);
+            if (!isValid) {
+                errorMessage.textContent = 'Invalid stock symbol or no data available';
+                errorMessage.classList.remove('hidden');
+                loadingMessage.classList.add('hidden');
+                submitBtn.disabled = false;
+                return;
+            }
 
-  // Init
-  (async () => {
-    laadOp();
-    await renderTabel();
-  })();
-</script>
+            const stock = { symbol, shares, purchasePrice };
+            const editIndex = editIndexInput.value;
 
+            if (editIndex !== '') {
+                // Unsubscribe from old symbol if changed
+                const oldSymbol = stocks[parseInt(editIndex)].symbol;
+                if (oldSymbol !== symbol && socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ type: 'unsubscribe', symbol: oldSymbol }));
+                }
+                stocks[parseInt(editIndex)] = stock;
+            } else {
+                stocks.push(stock);
+            }
+
+            // Subscribe to new symbol
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'subscribe', symbol }));
+            }
+
+            localStorage.setItem('stocks', JSON.stringify(stocks));
+            await renderStocks();
+            hideModal();
+            submitBtn.disabled = false;
+        });
+
+        // Edit stock
+        window.editStock = (index) => {
+            showModal(true, index);
+        };
+
+        // Delete stock
+        window.deleteStock = (index) => {
+            const symbol = stocks[index].symbol;
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'unsubscribe', symbol }));
+            }
+            delete priceData[symbol];
+            stocks.splice(index, 1);
+            localStorage.setItem('stocks', JSON.stringify(stocks));
+            renderStocks();
+        };
+
+        // Export to CSV
+        exportBtn.addEventListener('click', async () => {
+            await fetchExchangeRate();
+            let csv = 'Symbol,Shares,Purchase Price (USD),Total Purchase (USD),Current Price (USD),Current Price (EUR),Total Value (USD),Total Value (EUR),Gain/Loss (%),Gain/Loss (USD)\n';
+
+            for (const stock of stocks) {
+                const currentPrice = priceData[stock.symbol] || 0;
+                const totalPurchase = stock.shares * stock.purchasePrice;
+                const totalValue = stock.shares * currentPrice;
+                const gainLoss = totalValue - totalPurchase;
+                const gainLossPercent = currentPrice ? ((currentPrice - stock.purchasePrice) / stock.purchasePrice * 100).toFixed(2) : 'N/A';
+                const currentPriceEUR = currentPrice ? (currentPrice * exchangeRate).toFixed(2) : 'N/A';
+                const totalValueEUR = currentPrice ? (totalValue * exchangeRate).toFixed(2) : 'N/A';
+
+                csv += `${stock.symbol},${stock.shares},${stock.purchasePrice.toFixed(2)},${totalPurchase.toFixed(2)},${currentPrice ? currentPrice.toFixed(2) : 'N/A'},${currentPriceEUR},${totalValue ? totalValue.toFixed(2) : 'N/A'},${totalValueEUR},${gainLossPercent},${currentPrice ? gainLoss.toFixed(2) : 'N/A'}\n`;
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'portfolio.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // Event listeners
+        addStockBtn.addEventListener('click', () => showModal());
+        cancelBtn.addEventListener('click', hideModal);
+
+        // Initialize
+        initWebSocket();
+        renderStocks();
+    </script>
 </body>
 </html>
